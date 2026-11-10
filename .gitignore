@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# PyInstaller
+build/
+dist/
+# 注意：crop_studio.spec 是手写维护的打包配置，必须入库，所以这里不写 *.spec
+
+# 本地运行产生的测试截图与自检报告
+shot_win.png
+shot_exe*.png
+selftest*.txt
+_t/
+_out/
+
+# 程序自己的设置文件
+screen-maker.json
+
+# 系统垃圾
+.DS_Store
+Thumbs.db
+desktop.ini

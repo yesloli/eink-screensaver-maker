@@ -1,0 +1,96 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # 每次推送 / PR 只做语法与自检，一分钟内出结果
+  check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+
+      - name: 安装依赖
+        run: pip install -r requirements-dev.txt
+
+      - name: 语法检查
+        run: python -m py_compile crop_studio.py models.py make_icon.py _smoke.py
+
+      # 渲染链（cover 构图 → LANCZOS → 8 位灰度 → 查找表 → PNG 落盘回读）
+      # 与机型库自洽性（分辨率 ÷ PPI 必须落在真实面板档位上）都在这里跑
+      - name: 自检
+        run: python crop_studio.py --selftest selftest.txt
+
+      - name: 自检报告
+        if: always()
+        run: if (Test-Path selftest.txt) { Get-Content -Encoding utf8 selftest.txt }
+
+  # 打 tag 或手动触发时才真正打包 EXE
+  build:
+    needs: check
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+
+      - name: 安装依赖
+        run: pip install -r requirements-dev.txt
+
+      - name: 打包
+        run: pyinstaller --noconfirm --clean crop_studio.spec
+
+      - name: 生成 Release 用的 ASCII 文件名副本
+        run: |
+          # 发布动作处理非 ASCII 附件名时会丢掉原名：实测中文名变成了 default.exe，
+          # release 页面靠 label 仍显示中文，但下载存盘就是 default.exe。
+          # 这里另存一份纯 ASCII 命名的副本专供 Release，顺便当作自检对象。
+          $dst = "dist\eink-screensaver-maker-${{ github.ref_name }}-windows-x64.exe"
+          $leaf = Split-Path $dst -Leaf
+          $src = Get-ChildItem "dist\*.exe" | Where-Object { $_.Name -ne $leaf } | Select-Object -First 1
+          if (-not $src) { throw "未找到打包产物" }
+          Copy-Item $src.FullName $dst
+          Get-ChildItem "dist\*.exe" | ForEach-Object { "{0}  {1:N1} MB" -f $_.Name, ($_.Length / 1MB) }
+
+      - name: 无头自检
+        run: |
+          # 打包出来的是 GUI 子系统程序，PowerShell 直接用 & 调用不会等待，
+          # 必须 Start-Process -Wait，否则下一步读不到报告文件。
+          # 直接跑 ASCII 名的副本 —— 等于验证真正发布出去的那个文件。
+          $exe = Get-ChildItem "dist\eink-screensaver-maker-*.exe" | Select-Object -First 1
+          $p = Start-Process -FilePath $exe.FullName -ArgumentList "--selftest","selftest.txt" -PassThru -Wait
+          Get-Content -Encoding utf8 selftest.txt
+          if ($p.ExitCode -ne 0) { throw "selftest 退出码 $($p.ExitCode)" }
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: eink-screensaver-maker-windows
+          path: dist/*.exe
+          if-no-files-found: error
+
+      - name: 发布 Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/eink-screensaver-maker-*-windows-x64.exe
+          generate_release_notes: true
+          body_path: .github/release-notes.md
