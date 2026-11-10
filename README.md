@@ -96,7 +96,10 @@ pip install -r requirements-dev.txt
 pyinstaller --noconfirm --clean crop_studio.spec
 ```
 
-产物 `dist\墨水屏阅读器屏保制作.exe`（约 20 MB）。发布用的文件名另存一份纯 ASCII 的
+产物 `dist\墨水屏阅读器屏保制作.exe`（约 20 MB）。本地使用时把这份产物复制到目录根，
+双击即用；根目录的 exe 被 `.gitignore` 挡住，不进仓库。
+
+发布用的文件名另存一份纯 ASCII 的
 `eink-screensaver-maker-<tag>-windows-x64.exe`——GitHub Release 处理非 ASCII 附件名时
 会丢掉原名，实测中文名会变成 `default.exe`。
 
